@@ -35,6 +35,7 @@ jobs:
   build-and-verify:
     name: Build, Test & Verify
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,6 +48,11 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          df -h /
 
       - name: Build plugin
         run: ./gradlew buildPlugin ${{ inputs.gradle-args }}
