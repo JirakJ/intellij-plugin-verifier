@@ -1,0 +1,82 @@
+# Reusable workflow for IntelliJ Plugin verification
+# Called from individual plugin repos via workflow_call
+#
+# Usage in plugin repo (.github/workflows/verify.yml):
+#   jobs:
+#     verify:
+#       uses: JirakJ/intellij-plugin-verifier/.github/workflows/verify-plugin.yml@main
+#       with:
+#         gradle-plugin-version: '2.x'  # or '1.x'
+name: Verify IntelliJ Plugin
+
+on:
+  workflow_call:
+    inputs:
+      gradle-plugin-version:
+        description: 'Gradle IntelliJ Plugin version: "2.x" (modern) or "1.x" (legacy)'
+        required: false
+        type: string
+        default: '2.x'
+      java-version:
+        description: 'Java version for the build'
+        required: false
+        type: string
+        default: '17'
+      gradle-args:
+        description: 'Additional Gradle arguments'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      PLUGIN_TOKEN:
+        required: false
+
+jobs:
+  build-and-verify:
+    name: Build, Test & Verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ inputs.java-version }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build plugin
+        run: ./gradlew buildPlugin ${{ inputs.gradle-args }}
+
+      - name: Run tests
+        run: ./gradlew test ${{ inputs.gradle-args }}
+
+      - name: Verify plugin compatibility (modern 2.x)
+        if: inputs.gradle-plugin-version == '2.x'
+        run: ./gradlew verifyPlugin ${{ inputs.gradle-args }}
+
+      - name: Verify plugin compatibility (legacy 1.x)
+        if: inputs.gradle-plugin-version == '1.x'
+        run: ./gradlew runPluginVerifier ${{ inputs.gradle-args }}
+
+      - name: Upload verification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-report
+          path: |
+            build/reports/pluginVerifier/
+            build/pluginVerifier/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-distribution
+          path: build/distributions/*.zip
+          if-no-files-found: warn
+          retention-days: 30
