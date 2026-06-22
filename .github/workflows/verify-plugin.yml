@@ -50,9 +50,21 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Free disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
-          df -h /
+        # verifyPlugin downloads several full IDEs (~20 GB); the default runner
+        # disk isn't enough. Reclaim ~25-30 GB. tool-cache:false keeps the JDK
+        # installed by setup-java above.
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Disk space after cleanup
+        run: df -h /
 
       - name: Build plugin
         run: ./gradlew buildPlugin ${{ inputs.gradle-args }}
