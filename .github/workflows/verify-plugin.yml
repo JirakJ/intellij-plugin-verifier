@@ -36,7 +36,20 @@ jobs:
     name: Build, Test & Verify
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # The cramped / disk (~21 GB free) can't hold gradle caches + the 4 full
+      # IDEs verifyPlugin downloads. /mnt has ~74 GB free — put both there.
+      GRADLE_USER_HOME: /mnt/gradle
     steps:
+      - name: Stage heavy caches on /mnt (big disk)
+        run: |
+          sudo mkdir -p /mnt/gradle /mnt/pluginVerifier
+          sudo chown -R "$(id -u):$(id -g)" /mnt/gradle /mnt/pluginVerifier
+          mkdir -p "$HOME/.cache"
+          # verifyPlugin (IntelliJ Platform Gradle Plugin 2.x) downloads IDEs here
+          ln -sfn /mnt/pluginVerifier "$HOME/.cache/pluginVerifier"
+          df -h / /mnt
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -64,7 +77,7 @@ jobs:
           swap-storage: true
 
       - name: Disk space after cleanup
-        run: df -h /
+        run: df -h / /mnt
 
       - name: Build plugin
         run: ./gradlew buildPlugin ${{ inputs.gradle-args }}
