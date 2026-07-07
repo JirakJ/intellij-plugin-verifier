@@ -27,6 +27,11 @@ on:
         required: false
         type: string
         default: ''
+      runner-label:
+        description: 'Runner to run on: "ubuntu-latest" (GitHub-hosted) or a self-hosted label e.g. "rpi"'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
     secrets:
       PLUGIN_TOKEN:
         required: false
@@ -34,21 +39,26 @@ on:
 jobs:
   build-and-verify:
     name: Build, Test & Verify
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner-label }}
     timeout-minutes: 30
-    env:
-      # The cramped / disk (~21 GB free) can't hold gradle caches + the 4 full
-      # IDEs verifyPlugin downloads. /mnt has ~74 GB free — put both there.
-      GRADLE_USER_HOME: /mnt/gradle
     steps:
-      - name: Stage heavy caches on /mnt (big disk)
+      - name: Configure caches (host-specific)
+        shell: bash
         run: |
-          sudo mkdir -p /mnt/gradle /mnt/pluginVerifier
-          sudo chown -R "$(id -u):$(id -g)" /mnt/gradle /mnt/pluginVerifier
-          mkdir -p "$HOME/.cache"
-          # verifyPlugin (IntelliJ Platform Gradle Plugin 2.x) downloads IDEs here
-          ln -sfn /mnt/pluginVerifier "$HOME/.cache/pluginVerifier"
-          df -h / /mnt
+          if [ "${{ inputs.runner-label }}" = "ubuntu-latest" ]; then
+            # GitHub-hosted: cramped / (~21 GB) can't hold gradle caches + the 4
+            # full IDEs verifyPlugin downloads. /mnt has ~74 GB — stage both there.
+            sudo mkdir -p /mnt/gradle /mnt/pluginVerifier
+            sudo chown -R "$(id -u):$(id -g)" /mnt/gradle /mnt/pluginVerifier
+            mkdir -p "$HOME/.cache"
+            ln -sfn /mnt/pluginVerifier "$HOME/.cache/pluginVerifier"
+            echo "GRADLE_USER_HOME=/mnt/gradle" >> "$GITHUB_ENV"
+            df -h / /mnt
+          else
+            # Self-hosted (e.g. Pi): roomy disk, use the warm ~/.gradle cache.
+            echo "GRADLE_USER_HOME=$HOME/.gradle" >> "$GITHUB_ENV"
+            df -h "$HOME" || true
+          fi
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,11 +71,16 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          # Remote build cache Post-step hangs on a home uplink (self-hosted).
+          cache-disabled: ${{ inputs.runner-label != 'ubuntu-latest' }}
 
       - name: Free disk space
-        # verifyPlugin downloads several full IDEs (~20 GB); the default runner
-        # disk isn't enough. Reclaim ~25-30 GB. tool-cache:false keeps the JDK
-        # installed by setup-java above.
+        # GitHub-hosted only. verifyPlugin downloads several full IDEs (~20 GB);
+        # the default runner disk isn't enough. Reclaim ~25-30 GB. tool-cache:false
+        # keeps the JDK installed by setup-java above. This action is Ubuntu/apt-
+        # specific and would wreck a self-hosted host, so gate it.
+        if: inputs.runner-label == 'ubuntu-latest'
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: false
@@ -77,6 +92,7 @@ jobs:
           swap-storage: true
 
       - name: Disk space after cleanup
+        if: inputs.runner-label == 'ubuntu-latest'
         run: df -h / /mnt
 
       - name: Build plugin
