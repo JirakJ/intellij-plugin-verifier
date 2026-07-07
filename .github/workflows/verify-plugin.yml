@@ -96,18 +96,33 @@ jobs:
         run: df -h / /mnt
 
       - name: Build plugin
-        run: ./gradlew buildPlugin ${{ inputs.gradle-args }}
+        # Retry network-bound gradle tasks: a self-hosted runner on flaky WiFi
+        # can drop mid dependency/IDE download; Gradle resumes from its cache on
+        # the next attempt. Tests are NOT retried (local, would mask real fails).
+        run: |
+          n=0; until ./gradlew buildPlugin ${{ inputs.gradle-args }}; do
+            n=$((n+1)); [ "$n" -ge 3 ] && { echo "::error::buildPlugin failed after $n attempts"; exit 1; }
+            echo "::warning::buildPlugin attempt $n failed (transient network?), retrying in 30s"; sleep 30
+          done
 
       - name: Run tests
         run: ./gradlew test ${{ inputs.gradle-args }}
 
       - name: Verify plugin compatibility (modern 2.x)
         if: inputs.gradle-plugin-version == '2.x'
-        run: ./gradlew verifyPlugin ${{ inputs.gradle-args }}
+        run: |
+          n=0; until ./gradlew verifyPlugin ${{ inputs.gradle-args }}; do
+            n=$((n+1)); [ "$n" -ge 3 ] && { echo "::error::verifyPlugin failed after $n attempts"; exit 1; }
+            echo "::warning::verifyPlugin attempt $n failed (transient network?), retrying in 30s"; sleep 30
+          done
 
       - name: Verify plugin compatibility (legacy 1.x)
         if: inputs.gradle-plugin-version == '1.x'
-        run: ./gradlew runPluginVerifier ${{ inputs.gradle-args }}
+        run: |
+          n=0; until ./gradlew runPluginVerifier ${{ inputs.gradle-args }}; do
+            n=$((n+1)); [ "$n" -ge 3 ] && { echo "::error::runPluginVerifier failed after $n attempts"; exit 1; }
+            echo "::warning::runPluginVerifier attempt $n failed (transient network?), retrying in 30s"; sleep 30
+          done
 
       - name: Upload verification report
         if: always()
